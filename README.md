@@ -16,10 +16,26 @@
 
 ## 安装
 
-1. 打开 `chrome://extensions`（Edge 对应 `edge://extensions`）
-2. 打开「开发者模式」
-3. 点击「加载已解压的扩展程序」
-4. 选择目录：`ai-question-navigator-extension`
+### 方式一：从 GitHub 安装（推荐）
+
+1. 打开本仓库页面，点击 `Code` -> `Download ZIP`
+2. 将 ZIP 解压到本地任意目录
+3. Chrome 打开 `chrome://extensions`（Edge 打开 `edge://extensions`）
+4. 打开右上角「开发者模式」
+5. 点击「加载已解压的扩展程序」
+6. 选择解压后的 `ai-question-navigator-extension` 文件夹
+
+![安装步骤示意图](assets/screenshots/install-guide.png)
+
+### 使用与更新
+
+- 安装后，进入 ChatGPT 或 Gemini 网页即可看到右侧导航按钮
+- 升级版本时，替换本地文件后在扩展管理页点击「刷新」即可生效
+
+### 常见问题
+
+- 看不到扩展：确认已开启开发者模式，并选择的是解压后的根目录（包含 `manifest.json`）
+- 页面无导航：刷新网页（`Cmd/Ctrl + Shift + R`）后重试
 
 ## 说明
 
