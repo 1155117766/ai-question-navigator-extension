@@ -2,7 +2,13 @@
 
 一个聚焦「只导航用户提问」的浏览器插件，解决多轮对话里回看历史问题需要反复上滑的问题。
 
-![插件效果图](assets/screenshots/preview-banner.png)
+### 效果图
+
+点击前（悬浮按钮）  
+![点击前](assets/screenshots/preview-before-click.png.png)
+
+点击后（问题目录展开）  
+![点击后](assets/screenshots/preview-after-click.png.png)
 
 ## 支持平台
 
