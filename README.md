@@ -2,6 +2,8 @@
 
 一个聚焦「只导航用户提问」的浏览器插件，解决多轮对话里回看历史问题需要反复上滑的问题。
 
+![插件效果图](assets/screenshots/preview-banner.png)
+
 ## 支持平台
 
 - ChatGPT（`chatgpt.com` / `chat.openai.com`）
