@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "AI Question Navigator",
+  "description": "Extract and navigate user questions in ChatGPT and Gemini web chats.",
+  "version": "0.3.0",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://gemini.google.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*",
+        "https://gemini.google.com/*"
+      ],
+      "js": ["src/content.js"],
+      "css": ["src/sidebar.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "assets/icons/icon-16.png",
+    "32": "assets/icons/icon-32.png",
+    "48": "assets/icons/icon-48.png",
+    "128": "assets/icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "AI Question Navigator",
+    "default_icon": {
+      "16": "assets/icons/icon-16.png",
+      "32": "assets/icons/icon-32.png"
+    }
+  }
+}
