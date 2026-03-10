@@ -35,6 +35,7 @@
       out = out
         .replace(/\b(copy|copied|edit|retry|share)\b/gi, "")
         .replace(/复制|已复制|编辑|重试|分享/g, "")
+        .replace(/^(你说|你說)[\s:：，,]*/i, "")
         .trim();
     }
     return out;
@@ -181,7 +182,16 @@
   function render(messages) {
     const list = document.getElementById("aqn-list");
     const count = document.getElementById("aqn-count");
+    const floating = document.getElementById("aqn-float");
     if (!list || !count) return;
+
+    const mobile = window.matchMedia("(max-width: 820px)").matches;
+    const minH = mobile ? 170 : 150;
+    const maxH = mobile ? Math.min(Math.floor(window.innerHeight * 0.66), 462) : Math.min(Math.floor(window.innerHeight * 0.605), 396);
+    const baseH = mobile ? 92 : 84;
+    const perItemH = mobile ? 56 : 48;
+    const targetH = Math.max(minH, Math.min(maxH, baseH + Math.max(messages.length, 1) * perItemH));
+    floating?.style.setProperty("--aqn-open-height", `${targetH}px`);
 
     count.textContent = String(messages.length);
     list.innerHTML = "";
@@ -231,6 +241,8 @@
       sessionId: getSessionId(platform),
       messages: []
     };
+
+    render(state.messages);
 
     const floating = document.getElementById("aqn-float");
     const handle = document.getElementById("aqn-handle");
