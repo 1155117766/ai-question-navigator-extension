@@ -65,6 +65,141 @@
     return `aqn-msg-${Math.abs(h)}`;
   }
 
+  function sortNodesInDomOrder(nodes) {
+    return nodes.slice().sort((a, b) => {
+      if (!(a instanceof Node) || !(b instanceof Node)) return 0;
+      if (a === b) return 0;
+      const pos = a.compareDocumentPosition(b);
+      if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+      if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+      return 0;
+    });
+  }
+
+  function getLiveUserNodes(platform) {
+    if (platform === Platform.CHATGPT) {
+      const turns = Array.from(document.querySelectorAll("article[data-testid*='conversation-turn'], [data-testid*='conversation-turn']"));
+      const nodes = turns
+        .map((turn) => (turn instanceof Element ? turn.querySelector("[data-message-author-role='user']") : null))
+        .filter((n) => n instanceof Element && !n.closest(`#${EXT_ROOT_ID}`));
+      return sortNodesInDomOrder(Array.from(new Set(nodes)));
+    }
+
+    if (platform === Platform.GEMINI) {
+      const selectors = [
+        "user-query",
+        "[data-test-id='user-query']",
+        "[class*='user-query']",
+        "message-content[is-user]",
+        "[data-author='user']"
+      ];
+      const nodes = [];
+      selectors.forEach((s) => {
+        try {
+          document.querySelectorAll(s).forEach((n) => {
+            if (n instanceof Element && !n.closest(`#${EXT_ROOT_ID}`)) nodes.push(n);
+          });
+        } catch (_err) {}
+      });
+      return sortNodesInDomOrder(Array.from(new Set(nodes)));
+    }
+
+    return [];
+  }
+
+  function getScrollContainer() {
+    const main = document.querySelector("main");
+    if (main instanceof HTMLElement) {
+      const st = window.getComputedStyle(main);
+      if (/(auto|scroll)/.test(st.overflowY || "") && main.scrollHeight > main.clientHeight + 40) return main;
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+
+  function focusTarget(el) {
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    el.classList.add("aqn-highlight");
+    window.setTimeout(() => el.classList.remove("aqn-highlight"), 1200);
+  }
+
+  function pickBestCandidate(candidates, message, totalCount) {
+    if (candidates.length === 0) return null;
+    if (candidates.length === 1) return candidates[0];
+
+    const occurrence = Math.max(1, Number(message.occurrence || 1));
+    if (occurrence <= candidates.length) {
+      return candidates[occurrence - 1];
+    }
+
+    const ratio = totalCount > 1 ? (message.index - 1) / (totalCount - 1) : 0;
+    const targetIdx = Math.max(0, Math.min(candidates.length - 1, Math.round(ratio * (candidates.length - 1))));
+    return candidates[targetIdx];
+  }
+
+  function findTargetByMessage(message, state) {
+    const direct = document.getElementById(message.id) || document.querySelector(`[${ATTR_ANCHOR_ID}='${message.id}']`);
+    if (direct instanceof HTMLElement) return direct;
+
+    const targetCanonical = canonicalQuestionText(message.text);
+    if (!targetCanonical) return null;
+
+    const nodes = getLiveUserNodes(state.platform);
+    const exact = [];
+    const fuzzy = [];
+    for (const node of nodes) {
+      const raw = sanitizeText(state.platform, node.textContent || "");
+      const canonical = canonicalQuestionText(raw);
+      if (!canonical) continue;
+      if (canonical === targetCanonical) {
+        exact.push(node);
+        continue;
+      }
+      // Fallback only for truncated/partially rendered text.
+      if (canonical.startsWith(targetCanonical) || targetCanonical.startsWith(canonical)) {
+        fuzzy.push(node);
+      }
+    }
+
+    const candidates = exact.length > 0 ? exact : fuzzy;
+    const best = pickBestCandidate(candidates, message, state.messages.length);
+    if (best) ensureAnchor(best, message.id);
+    return best;
+  }
+
+  async function scrollToMessage(message, state) {
+    let target = findTargetByMessage(message, state);
+    if (target) {
+      focusTarget(target);
+      return;
+    }
+
+    const container = getScrollContainer();
+    if (!(container instanceof HTMLElement)) return;
+
+    const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+    if (maxScroll <= 0) return;
+
+    const ratio = state.messages.length > 1 ? (message.index - 1) / (state.messages.length - 1) : 0;
+    const approx = Math.max(0, Math.min(maxScroll, Math.floor(maxScroll * ratio)));
+    const positions = [
+      approx,
+      Math.max(0, approx - Math.floor(maxScroll * 0.2)),
+      Math.min(maxScroll, approx + Math.floor(maxScroll * 0.2)),
+      0,
+      maxScroll
+    ];
+
+    for (const pos of positions) {
+      container.scrollTop = pos;
+      await new Promise((resolve) => window.setTimeout(resolve, 140));
+      target = findTargetByMessage(message, state);
+      if (target) {
+        focusTarget(target);
+        return;
+      }
+    }
+  }
+
   function getSessionId(platform) {
     const search = new URLSearchParams(window.location.search);
     const queryId =
@@ -104,8 +239,9 @@
     const turns = Array.from(document.querySelectorAll("article[data-testid*='conversation-turn'], [data-testid*='conversation-turn']"));
     const out = [];
     const seenCanonical = new Set();
+    const occurrenceMap = new Map();
 
-    turns.forEach((turn, idx) => {
+    turns.forEach((turn) => {
       if (!(turn instanceof Element)) return;
       const userRoot = turn.querySelector("[data-message-author-role='user']");
       if (!(userRoot instanceof Element)) return;
@@ -119,9 +255,11 @@
       if (seenCanonical.has(canonical)) return;
       seenCanonical.add(canonical);
 
-      const id = hashMessage(canonical, idx, sessionId);
+      const occurrence = (occurrenceMap.get(canonical) || 0) + 1;
+      occurrenceMap.set(canonical, occurrence);
+      const id = hashMessage(canonical, occurrence, sessionId);
       ensureAnchor(userRoot, id);
-      out.push({ id, text: canonical, short: shortText(canonical), index: out.length + 1 });
+      out.push({ id, text: canonical, short: shortText(canonical), index: out.length + 1, occurrence });
     });
 
     return out;
@@ -148,8 +286,9 @@
     const unique = Array.from(new Set(nodes));
     const out = [];
     const seenCanonical = new Set();
+    const occurrenceMap = new Map();
 
-    unique.forEach((node, idx) => {
+    unique.forEach((node) => {
       const raw = sanitizeText(Platform.GEMINI, node.textContent || "");
       const canonical = canonicalQuestionText(raw);
       if (!canonical) return;
@@ -157,9 +296,11 @@
       if (seenCanonical.has(canonical)) return;
       seenCanonical.add(canonical);
 
-      const id = hashMessage(canonical, idx, sessionId);
+      const occurrence = (occurrenceMap.get(canonical) || 0) + 1;
+      occurrenceMap.set(canonical, occurrence);
+      const id = hashMessage(canonical, occurrence, sessionId);
       ensureAnchor(node, id);
-      out.push({ id, text: canonical, short: shortText(canonical), index: out.length + 1 });
+      out.push({ id, text: canonical, short: shortText(canonical), index: out.length + 1, occurrence });
     });
 
     return out;
@@ -171,15 +312,8 @@
     return [];
   }
 
-  function scrollToMessage(id) {
-    const target = document.getElementById(id) || document.querySelector(`[${ATTR_ANCHOR_ID}='${id}']`);
-    if (!target) return;
-    target.scrollIntoView({ behavior: "smooth", block: "center" });
-    target.classList.add("aqn-highlight");
-    window.setTimeout(() => target.classList.remove("aqn-highlight"), 1200);
-  }
-
-  function render(messages) {
+  function render(state) {
+    const messages = state.messages;
     const list = document.getElementById("aqn-list");
     const count = document.getElementById("aqn-count");
     const floating = document.getElementById("aqn-float");
@@ -211,7 +345,9 @@
       goto.className = "aqn-goto";
       goto.textContent = `Q${m.index}  ${m.short}`;
       goto.title = m.text;
-      goto.addEventListener("click", () => scrollToMessage(m.id));
+      goto.addEventListener("click", () => {
+        void scrollToMessage(m, state);
+      });
       li.appendChild(goto);
       list.appendChild(li);
     });
@@ -242,7 +378,7 @@
       messages: []
     };
 
-    render(state.messages);
+    render(state);
 
     const floating = document.getElementById("aqn-float");
     const handle = document.getElementById("aqn-handle");
@@ -255,7 +391,7 @@
       const next = collectMessages(state.platform, state.sessionId);
       if (sameMessages(next, state.messages)) return;
       state.messages = next;
-      render(state.messages);
+      render(state);
     };
 
     const scheduleRefresh = (delay = 100) => {
@@ -271,6 +407,7 @@
       if (href === lastHref) return;
       lastHref = href;
       state.sessionId = getSessionId(state.platform);
+      state.messages = [];
       scheduleRefresh(90);
       window.setTimeout(refresh, 360);
       window.setTimeout(refresh, 780);
