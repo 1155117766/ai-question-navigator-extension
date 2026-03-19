@@ -116,8 +116,46 @@
     return document.scrollingElement || document.documentElement;
   }
 
+  function scrollElementToTop(target) {
+    if (!(target instanceof HTMLElement)) return;
+
+    const container = getScrollContainer();
+    const viewportOffset = 16;
+    const beforeTop = window.scrollY;
+
+    if (container instanceof HTMLElement && container !== document.documentElement && container !== document.body) {
+      const containerRect = container.getBoundingClientRect();
+      const targetRect = target.getBoundingClientRect();
+      const nextTop = container.scrollTop + (targetRect.top - containerRect.top) - viewportOffset;
+      container.scrollTo({
+        top: Math.max(0, nextTop),
+        behavior: "smooth"
+      });
+      window.setTimeout(() => {
+        const afterRect = target.getBoundingClientRect();
+        const movedEnough = Math.abs(afterRect.top - targetRect.top) > 8;
+        if (!movedEnough) {
+          target.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+      }, 180);
+      return;
+    }
+
+    const targetTop = window.scrollY + target.getBoundingClientRect().top - viewportOffset;
+    window.scrollTo({
+      top: Math.max(0, targetTop),
+      behavior: "smooth"
+    });
+    window.setTimeout(() => {
+      const movedEnough = Math.abs(window.scrollY - beforeTop) > 8;
+      if (!movedEnough) {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 180);
+  }
+
   function focusTarget(el) {
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    scrollElementToTop(el);
     el.classList.add("aqn-highlight");
     window.setTimeout(() => el.classList.remove("aqn-highlight"), 1200);
   }
@@ -214,6 +252,31 @@
     const path = window.location.pathname || "/";
     const slug = path.replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "") || "home";
     return `${platform}-${slug}`;
+  }
+
+  function isFreshComposerPage(platform) {
+    if (platform === Platform.CHATGPT) {
+      const path = window.location.pathname || "/";
+      const isNewChatPath = path === "/" || /^\/\?.*$/.test(path);
+      const hasConversationPath = /\/c\/[a-z0-9-]+/i.test(path);
+      const hasUserMessages = getLiveUserNodes(platform).length > 0;
+      const hasComposer =
+        document.querySelector("form textarea") ||
+        document.querySelector("[contenteditable='true']") ||
+        document.querySelector("textarea[placeholder]");
+      return !hasConversationPath && isNewChatPath && !!hasComposer && !hasUserMessages;
+    }
+
+    if (platform === Platform.GEMINI) {
+      const hasUserMessages = getLiveUserNodes(platform).length > 0;
+      const hasComposer =
+        document.querySelector("rich-textarea textarea") ||
+        document.querySelector("textarea") ||
+        document.querySelector("[contenteditable='true']");
+      return !!hasComposer && !hasUserMessages;
+    }
+
+    return false;
   }
 
   function createRoot() {
@@ -388,6 +451,14 @@
     let scanTimer = null;
 
     const refresh = () => {
+      if (isFreshComposerPage(state.platform)) {
+        if (state.messages.length > 0) {
+          state.messages = [];
+          render(state);
+        }
+        return;
+      }
+
       const next = collectMessages(state.platform, state.sessionId);
       if (sameMessages(next, state.messages)) return;
       state.messages = next;
@@ -408,6 +479,7 @@
       lastHref = href;
       state.sessionId = getSessionId(state.platform);
       state.messages = [];
+      render(state);
       scheduleRefresh(90);
       window.setTimeout(refresh, 360);
       window.setTimeout(refresh, 780);
